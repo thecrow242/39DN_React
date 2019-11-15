@@ -1,0 +1,27 @@
+#map {
+  height: 400px;
+  z-index: 0;
+}
+
+#layerList {
+  background-color: #303030;
+  padding: 0.4em;
+  z-index: 99;
+  top: 250px;
+  right: 20px;
+  position: absolute;  
+  border-radius: 8px;
+}
+
+.layerItem {
+  padding: 0.1em;
+}
+
+.layerItem label {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0.9em;
+}
+
+.layerItem label {
+  cursor: pointer;
+}
