@@ -1,6 +1,6 @@
 import React from 'react';
 import L from 'leaflet';
-import LayerItem from './LayerItem'
+import LayerItem from './LayerItem';
 
 const mapboxURL = 'https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={accessToken}';
 const mapboxToken = 'pk.eyJ1IjoiY2hyaXNodXNzZXkiLCJhIjoiY2syejV5ejkwMDk0OTNjcWkxNDdrbmQweSJ9.3SCs_HzklNJpvd9mJi004w';
@@ -19,10 +19,6 @@ const layers = [
 
 
 class Map extends React.Component {
-    state = {
-        results: []
-    }
-    
     mainMap = {};
 
     componentDidMount() {
@@ -45,6 +41,7 @@ class Map extends React.Component {
             "Satellite": satelliteMap,
             "Streetview": streetMap
         };
+
         L.control.layers(baseMaps, null).addTo(this.mainMap);
 
     }
@@ -79,60 +76,89 @@ class Map extends React.Component {
         });
     }
 
-
-    loadGeoJSON(lyrId, myMap, loadedCB, generateCB) {
-        let xhr = new XMLHttpRequest();
-        xhr.open('GET', layers[lyrId].url);
-        xhr.setRequestHeader('Content-Type', 'application/json');
-        xhr.responseType = 'json';
-        xhr.onload = function() {
-            if (xhr.status === 200) {
-                loadedCB(xhr.response, lyrId, generateCB, myMap);
-            }
-        };
-        xhr.send();
+    loadAndBindLayer(lyrId) {
+        fetch(layers[lyrId].url)
+            .then(data => data.json())
+            .then(mapjson => this.createLeafletLayer(lyrId, mapjson));
     }
 
-    loadedGeoJSON(data, lyrId, generateCB, myMap) {
+    createLeafletLayer(lyrId, data) {
+        // create the layer with the color from that layer's setting
         layers[lyrId].lyr = L.geoJSON(data, {
-            style: function (feature) {
-                return {color: layers[lyrId].color};
-        }}).on('click', function(e) {
-            var f = e.layer.feature.properties;
-            generateCB(f, e.latlng, myMap);
+            style: {color: layers[lyrId].color}
         });
 
-        layers[lyrId].lyr.addTo(myMap);
+        // only perform the census lookup on certain layers
+        if(layers[lyrId].enableLookup) {
+            layers[lyrId].lyr.on({
+                click: this.censusLookup.bind(this)
+            });
+        }
+
+        layers[lyrId].lyr.addTo(this.mainMap);
     }
 
     loadLayer = (layerId, event) => {
         if(event.target.checked) {
-            this.loadGeoJSON(
+            this.loadAndBindLayer(
                 layerId,
-                this.mainMap,
-                this.loadedGeoJSON,
-                this.generatePopup)
+                this.mainMap);
         }
         else {
             layers[layerId].lyr.remove();
         }
     }
 
-    generatePopup(props, latlng, myMap) {
-        // create the API URL to query the census.gov site
+    censusLookup(e) {
+        const props = e.layer.feature.properties;
+        const latlng = e.latlng;
+
+        const url = this.generateCensusUrl(props);
+        fetch(url)
+            .then(data => data.json())
+            .then(censusjson => this.readCensusData(latlng, censusjson))
+            .catch(err => this.noDataError(latlng));
+    }
+
+    noDataError(latlng) {
+        L.popup()
+        .setLatLng(latlng)
+        .setContent('<p>Error: No language data for the selected area</p>')
+        .openOn(this.mainMap);
+    }
+
+    readCensusData(latlng, data) {
+        // simple results display
+        // column order: LAN7,LAN,EST,LANLABEL,NAME
+
+        const locName = data[1][4];
+        let html = '<table><tr><th colspan="2" style="text-align: center">' + locName + '</th></tr>';
+        // 1st result item is column names, start on 2nd result item
+        for(let a = 1; a < data.length; a++)
+        {
+            // weird results, just requesting LAN7 omits spanish, so
+            //   include LAN and look for LAN7=1-7 or LAN=625
+            if( parseInt(data[a][0]) !== 0 || parseInt(data[a][1]) === 625 )
+                html += '<tr><td>' + data[a][3] + ':</td><td>' + data[a][2] + '</td></tr>';
+        }
+        html += '</table>';
+
+        // create the leaflet popup
+        L.popup()
+            .setLatLng(latlng)
+            .setContent(html)
+            .openOn(this.mainMap);
+    }
+
+    generateCensusUrl(props) {
         let url = censusBaseUrl;
         url += 'get=' + censusGetFields;
         url += '&for=';
 
-        let state = String(props.STATE);
-        while(state.length < 2)
-            state = '0' + state;
+        let state = this.padZeroes(String(props.STATE), 2);
         // different URL setup for county vs state
         if(props.hasOwnProperty('COUNTY')) {
-            let county = String(props.COUNTY);
-            while(county.length < 3)
-                county = '0' + county;
-    
+            let county = this.padZeroes(String(props.COUNTY), 3);
             url += 'county:' + county + '&in=state:' + state;
         }
         else {
@@ -140,39 +166,14 @@ class Map extends React.Component {
         }
 
         url += '&key=' + censusToken;
-
-        fetch(url)
-            .then(function(response) {
-                response.json()
-                    .then(function(data) {
-                        // simple results display
-                        // column order: LAN7,LAN,EST,LANLABEL,NAME
-
-                        const locName = data[1][4];
-                        let html = '<table><tr><th colspan="2" style="text-align: center">' + locName + '</th></tr>';
-                        for(let a = 1; a < data.length; a++)
-                        {
-                            // weird results, just requesting LAN7 omits spanish, so
-                            //   include LAN and look for LAN7 1-7 or LAN 625
-                            if( parseInt(data[a][0]) !== 0 || parseInt(data[a][1]) === 625 )
-                                html += '<tr><td>' + data[a][3] + ':</td><td>' + data[a][2] + '</td></tr>';
-                        }
-                        html += '</table>';
-                        
-                        L.popup()
-                            .setLatLng(latlng)
-                            .setContent(html)
-                            .openOn(myMap);
-                    })
-                    .catch(function(err) {
-                        L.popup()
-                            .setLatLng(latlng)
-                            .setContent('<p>Error: No language data for the selected area</p>')
-                            .openOn(myMap);
-                    });
-            });
+        return url;
     }
 
+    padZeroes(val, len) {
+        while(val.length < len)
+            val = '0' + val
+        return val;
+    }
 }
 
 
