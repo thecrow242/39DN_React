@@ -48,7 +48,7 @@ class Map extends React.Component {
 
     render() {
         return (
-            <div>
+            <div id="map-wrapper">
                 <div id="map"></div>
                 <table id="layerList">
                     <tbody>
@@ -138,8 +138,10 @@ class Map extends React.Component {
         {
             // weird results, just requesting LAN7 omits spanish, so
             //   include LAN and look for LAN7=1-7 or LAN=625
-            if( parseInt(data[a][0]) !== 0 || parseInt(data[a][1]) === 625 )
-                html += '<tr><td>' + data[a][3] + ':</td><td>' + data[a][2] + '</td></tr>';
+            if( parseInt(data[a][0]) !== 0 || parseInt(data[a][1]) === 625 ) {
+                html += '<tr><td>' + data[a][3] + ':</td>';
+                html += '<td class="resultCount">' + Number(data[a][2]).toLocaleString() + '</td></tr>';
+            }
         }
         html += '</table>';
 
